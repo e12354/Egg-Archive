@@ -1,0 +1,69 @@
+Fix websocket
+@sock.route("/api/notify/hub/v1")
+def notify(ws):
+    print(request.args["id"])
+    websocket.players.append({
+        "playerId": request.args["id"],
+        "uuid": str(uuid.uuid4()),
+        "ws": ws
+    })
+    threading.Thread(target=sendPings, args=(ws,)).start()
+    while True:
+        data = ws.receive()
+        if bytes(data).endswith(b"\x1e"):
+            data = bytes(data).replace(b"\x1e", b"")
+        print("received data: " + str(data))
+        dataJson = dict(json.loads(data.decode()))
+        #except:
+        #    websocket.close(ws)
+        #    return
+        type1 = dataJson.get("type")
+        if type1 is not None:
+            if type1 == websocket.MessageTypes.Invocation.value:
+                if dataJson["target"] == "SubscribeToPlayers":
+                    invocationId = dataJson["invocationId"]
+                    websocket.send({"type": websocket.MessageTypes.Completion.value,"invocationId": str(invocationId),"result": None}, ws)
+        #ws.send(data)
+
+        @app.route("/api/PlayerReporting/v1/hile", methods=["POST"])
+def apiPlayerReportingv1hile():
+    Authorization = request.headers.get("Authorization")
+    if Authorization is None:
+        return abort(401)
+    with open(f"{dbPath}jwt_key.txt") as f:
+        jwt_key = f.read()
+    try:
+        token = jwt.decode(Authorization.split("Bearer ")[1], jwt_key, algorithms=["HS256"])
+    except:
+        return abort(500)
+    playerData = Auth_API.getPlayerByAuthorization(token["Authorization"])
+    if playerData is None:
+        return abort(401)
+    print(request.form)
+    Message = request.form["Message"]
+    try:
+        Type = EnumData.PlayerReportingTypes(int(request.form["Type"]))
+    except ValueError:
+        return abort(400)
+    print(Type.name)
+    if Type.value == EnumData.PlayerReportingTypes.AppData_Boot_UnableToVerifySignatures.value:
+        return jsonify(False)
+    DiscordMSGJson = {
+        "content": None,
+        "embeds": [
+            {
+                "title": "PlayerReporting hile",
+                "description": f"{Type.name}: {Message}",
+                "color": 8716543,
+                "author": {
+                    "name": f"@{playerData["username"]}",
+                    "url": f"https://zestrec.oldrecroom.com/user/@{playerData["username"]}",
+                    "icon_url": f"https://zestrecimg.oldrecroom.com/{playerData["profileImage"]}"
+                }
+            }
+        ]
+    }
+    with open(f"{dbPath}discordwebhookFeed.txt") as f:
+        discordwebhookFeed = f.read()
+    requests.request("POST", discordwebhookFeed, json=DiscordMSGJson)
+    return jsonify(True)
